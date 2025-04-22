@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Witch Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            touch-action: none;
+        }
+        
+        #gameCanvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #mobileControls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 150px;
+            height: 150px;
+            background-color: rgba(128, 0, 128, 0.3);
+            border-radius: 50%;
+            display: none;
+            touch-action: none;
+        }
+        
+        #controlIndicator {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background-color: rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            top: 60px;
+            left: 60px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="mobileControls">
+        <div id="controlIndicator"></div>
+    </div>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Mobile controls
+        const mobileControls = document.getElementById('mobileControls');
+        const controlIndicator = document.getElementById('controlIndicator');
+        
+        // Resize canvas to full window
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Check if device is mobile
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+            mobileControls.style.display = 'block';
+        }
+        
+        // Witch character
+        const witch = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            size: 50,
+            speed: 5,
+            dx: 0,
+            dy: 0
+        };
+        
+        // Controls state
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false
+        };
+        
+        // Create witch sprite
+        const witchSprite = new Image();
+        witchSprite.src = 'data:image/svg+xml;base64,' + btoa(`
+            <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                <!-- Purple Witch Hat -->
+                <path d="M100 50 L130 130 L70 130 Z" fill="#9932CC" stroke="black" stroke-width="2"/>
+                <path d="M70 130 L130 130 L150 150 L50 150 Z" fill="#9932CC" stroke="black" stroke-width="2"/>
+                <!-- Hat Stripes -->
+                <path d="M80 110 L120 110" stroke="#4169E1" stroke-width="2"/>
+                <path d="M75 100 L125 100" stroke="#4169E1" stroke-width="2"/>
+                <path d="M85 120 L115 120" stroke="#4169E1" stroke-width="2"/>
+                <!-- Circular Face -->
+                <circle cx="100" cy="170" r="30" fill="white" stroke="black" stroke-width="2"/>
+                <!-- Face Line -->
+                <path d="M85 150 L100 190" stroke="#4169E1" stroke-width="2"/>
+                <!-- Eyes -->
+                <circle cx="90" cy="165" r="5" fill="white" stroke="black" stroke-width="2"/>
+                <circle cx="110" cy="165" r="5" fill="#1E90FF" stroke="black" stroke-width="2"/>
+                <!-- Eye Pupils -->
+                <circle cx="90" cy="165" r="2" fill="black"/>
+                <circle cx="110" cy="165" r="2" fill="black"/>
+            </svg>
+        `);
+        
+        // Keyboard event listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'w' || e.key === 'W') keys.w = true;
+            if (e.key === 'a' || e.key === 'A') keys.a = true;
+            if (e.key === 's' || e.key === 'S') keys.s = true;
+            if (e.key === 'd' || e.key === 'D') keys.d = true;
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'w' || e.key === 'W') keys.w = false;
+            if (e.key === 'a' || e.key === 'A') keys.a = false;
+            if (e.key === 's' || e.key === 'S') keys.s = false;
+            if (e.key === 'd' || e.key === 'D') keys.d = false;
+        });
+        
+        // Mobile control event listeners
+        let touchActive = false;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
+        mobileControls.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            touchActive = true;
+            const touch = e.touches[0];
+            const rect = mobileControls.getBoundingClientRect();
+            touchStartX = rect.left + rect.width / 2;
+            touchStartY = rect.top + rect.height / 2;
+            updateMobileControls(touch.clientX, touch.clientY);
+        });
+        
+        mobileControls.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (touchActive) {
+                const touch = e.touches[0];
+                updateMobileControls(touch.clientX, touch.clientY);
+            }
+        });
+        
+        mobileControls.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            touchActive = false;
+            resetMobileControls();
+        });
+        
+        function updateMobileControls(touchX, touchY) {
+            const rect = mobileControls.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            // Calculate distance from center (normalized)
+            let dx = (touchX - centerX) / (rect.width / 2);
+            let dy = (touchY - centerY) / (rect.height / 2);
+            
+            // Clamp values between -1 and 1
+            dx = Math.max(-1, Math.min(1, dx));
+            dy = Math.max(-1, Math.min(1, dy));
+            
+            // Update indicator position
+            controlIndicator.style.left = (rect.width / 2 + dx * (rect.width / 2 - 15)) + 'px';
+            controlIndicator.style.top = (rect.height / 2 + dy * (rect.height / 2 - 15)) + 'px';
+            
+            // Update witch movement
+            witch.dx = dx * witch.speed;
+            witch.dy = dy * witch.speed;
+        }
+        
+        function resetMobileControls() {
+            controlIndicator.style.left = '60px';
+            controlIndicator.style.top = '60px';
+            witch.dx = 0;
+            witch.dy = 0;
+        }
+        
+        // Update witch position
+        function updateWitch() {
+            // Keyboard controls
+            if (!isMobile || !touchActive) {
+                witch.dx = 0;
+                witch.dy = 0;
+                
+                if (keys.w) witch.dy = -witch.speed;
+                if (keys.s) witch.dy = witch.speed;
+                if (keys.a) witch.dx = -witch.speed;
+                if (keys.d) witch.dx = witch.speed;
+            }
+            
+            // Update position
+            witch.x += witch.dx;
+            witch.y += witch.dy;
+            
+            // Keep witch within canvas bounds
+            witch.x = Math.max(witch.size / 2, Math.min(canvas.width - witch.size / 2, witch.x));
+            witch.y = Math.max(witch.size / 2, Math.min(canvas.height - witch.size / 2, witch.y));
+        }
+        
+        // Draw everything
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw witch
+            ctx.drawImage(witchSprite, witch.x - witch.size / 2, witch.y - witch.size / 2, witch.size, witch.size);
+        }
+        
+        // Game loop
+        function gameLoop() {
+            updateWitch();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start game
+        witchSprite.onload = function() {
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
