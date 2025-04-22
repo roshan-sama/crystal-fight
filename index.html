@@ -36,6 +36,7 @@
             border-radius: 50%;
             display: none;
             touch-action: none;
+            z-index: 10;
         }
         
         #controlIndicator {
@@ -79,6 +80,12 @@
             mobileControls.style.display = 'block';
         }
         
+        // Game state
+        let gameOver = false;
+        let hearts = 3;
+        let blueCrystalsCollected = 0;
+        let score = 0;
+        
         // Witch character
         const witch = {
             x: canvas.width / 2,
@@ -88,6 +95,38 @@
             dx: 0,
             dy: 0
         };
+        
+        // Fireballs array (now blue magic bolts)
+        const fireballs = [];
+        
+        // Fireball properties
+        const fireballSpeed = 10;
+        const fireballSize = 20;
+        
+        // Crystals array
+        const crystals = [];
+        
+        // Crystal properties
+        const crystalSize = 30;
+        const crystalSpeed = 3;
+        const crystalSpawnRate = 60; // Frames between crystal spawns
+        let crystalSpawnCounter = 0;
+        const redCrystalChance = 0.8; // 80% chance for red crystals
+        
+        // Stalactite properties
+        const stalactiteHeight = 60;
+        const numStalactites = 7;
+        
+        // Crystal spawn positions
+        const crystalSpawnPositions = [];
+        const calculateSpawnPositions = () => {
+            crystalSpawnPositions.length = 0;
+            const spacing = canvas.width / (numStalactites + 1);
+            for (let i = 1; i <= numStalactites; i++) {
+                crystalSpawnPositions.push(spacing * i);
+            }
+        };
+        calculateSpawnPositions();
         
         // Controls state
         const keys = {
@@ -121,12 +160,134 @@
             </svg>
         `);
         
+        // Create heart sprite
+        const heartSprite = new Image();
+        heartSprite.src = 'data:image/svg+xml;base64,' + btoa(`
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <path d="M50 90 L15 55 Q0 40 15 25 Q30 10 50 25 Q70 10 85 25 Q100 40 85 55 Z" fill="#FF5555" stroke="black" stroke-width="2"/>
+            </svg>
+        `);
+        
+        // Create blue crystal sprite
+        const blueCrystalIcon = new Image();
+        blueCrystalIcon.src = 'data:image/svg+xml;base64,' + btoa(`
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <polygon points="50,10 80,30 80,70 50,90 20,70 20,30" fill="#4169E1" stroke="#FFFFFF" stroke-width="2"/>
+                <polygon points="50,10 50,90 80,70 80,30" fill="#5A7DE1" stroke="#FFFFFF" stroke-width="2"/>
+                <polygon points="50,10 50,90 20,70 20,30" fill="#3050C0" stroke="#FFFFFF" stroke-width="2"/>
+            </svg>
+        `);
+        
+        // Create stalactite 
+        function drawStalactites() {
+            // Draw the icy ceiling
+            const gradient = ctx.createLinearGradient(0, 0, 0, stalactiteHeight);
+            gradient.addColorStop(0, '#AADDFF');
+            gradient.addColorStop(1, '#88BBDD');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, stalactiteHeight);
+            
+            // Draw the icicles
+            ctx.fillStyle = '#CCFFFF';
+            for (let i = 0; i < numStalactites; i++) {
+                const x = crystalSpawnPositions[i];
+                
+                // Draw triangular stalactite
+                ctx.beginPath();
+                ctx.moveTo(x - 20, 0);
+                ctx.lineTo(x, stalactiteHeight + 30);
+                ctx.lineTo(x + 20, 0);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Add shine effect
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.beginPath();
+                ctx.moveTo(x - 10, 0);
+                ctx.lineTo(x - 5, stalactiteHeight + 15);
+                ctx.lineTo(x, stalactiteHeight + 10);
+                ctx.lineTo(x - 5, 0);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.fillStyle = '#CCFFFF';
+            }
+        }
+        
+        // Function to create a fireball (now blue magic)
+        function createFireball() {
+            fireballs.push({
+                x: witch.x,
+                y: witch.y - witch.size / 2, // Start at the top of the witch
+                size: fireballSize,
+                speed: fireballSpeed
+            });
+        }
+        
+        // Function to create a crystal
+        function createCrystal() {
+            const spawnPositionIndex = Math.floor(Math.random() * numStalactites);
+            const isRed = Math.random() < redCrystalChance;
+            
+            crystals.push({
+                x: crystalSpawnPositions[spawnPositionIndex],
+                y: stalactiteHeight,
+                size: crystalSize,
+                speed: crystalSpeed,
+                isRed: isRed
+            });
+        }
+        
+        // Check collision between two objects
+        function checkCollision(obj1, obj2) {
+            const dx = obj1.x - obj2.x;
+            const dy = obj1.y - obj2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            return distance < (obj1.size / 2 + obj2.size / 2);
+        }
+        
+        // Click/tap event to create fireball
+        canvas.addEventListener('click', (e) => {
+            if (!gameOver) {
+                createFireball();
+            } else {
+                // Restart game on click if game over
+                resetGame();
+            }
+        });
+        
+        // Touch event for mobile that doesn't interfere with controls
+        canvas.addEventListener('touchend', (e) => {
+            if (gameOver) {
+                resetGame();
+                return;
+            }
+            
+            // Check if the touch was not on the mobile controls
+            const touch = e.changedTouches[0];
+            const controlsRect = mobileControls.getBoundingClientRect();
+            if (
+                touch.clientX < controlsRect.left || 
+                touch.clientX > controlsRect.right || 
+                touch.clientY < controlsRect.top || 
+                touch.clientY > controlsRect.bottom
+            ) {
+                createFireball();
+            }
+        });
+        
         // Keyboard event listeners
         window.addEventListener('keydown', (e) => {
             if (e.key === 'w' || e.key === 'W') keys.w = true;
             if (e.key === 'a' || e.key === 'A') keys.a = true;
             if (e.key === 's' || e.key === 'S') keys.s = true;
             if (e.key === 'd' || e.key === 'D') keys.d = true;
+            // Space key can also create a fireball
+            if (e.key === ' ' && !gameOver) createFireball();
+            // Restart game on Enter if game over
+            if (e.key === 'Enter' && gameOver) resetGame();
         });
         
         window.addEventListener('keyup', (e) => {
@@ -196,6 +357,8 @@
         
         // Update witch position
         function updateWitch() {
+            if (gameOver) return;
+            
             // Keyboard controls
             if (!isMobile || !touchActive) {
                 witch.dx = 0;
@@ -213,7 +376,144 @@
             
             // Keep witch within canvas bounds
             witch.x = Math.max(witch.size / 2, Math.min(canvas.width - witch.size / 2, witch.x));
-            witch.y = Math.max(witch.size / 2, Math.min(canvas.height - witch.size / 2, witch.y));
+            witch.y = Math.max(stalactiteHeight + witch.size / 2, Math.min(canvas.height - witch.size / 2, witch.y));
+        }
+        
+        // Update fireballs
+        function updateFireballs() {
+            for (let i = fireballs.length - 1; i >= 0; i--) {
+                // Move fireball upward
+                fireballs[i].y -= fireballs[i].speed;
+                
+                // Remove fireball if it's off screen
+                if (fireballs[i].y + fireballs[i].size < 0) {
+                    fireballs.splice(i, 1);
+                    continue;
+                }
+                
+                // Check for collision with crystals
+                for (let j = crystals.length - 1; j >= 0; j--) {
+                    if (checkCollision(fireballs[i], crystals[j])) {
+                        // Remove the fireball
+                        fireballs.splice(i, 1);
+                        
+                        // Remove the crystal
+                        crystals.splice(j, 1);
+                        
+                        // Increase score
+                        score += 100;
+                        
+                        // Exit the loop since fireball is gone
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Update crystals
+        function updateCrystals() {
+            // Spawn new crystal
+            if (!gameOver) {
+                crystalSpawnCounter++;
+                if (crystalSpawnCounter >= crystalSpawnRate) {
+                    createCrystal();
+                    crystalSpawnCounter = 0;
+                }
+            }
+            
+            // Update existing crystals
+            for (let i = crystals.length - 1; i >= 0; i--) {
+                // Move crystal downward
+                crystals[i].y += crystals[i].speed;
+                
+                // Remove crystal if it's off screen
+                if (crystals[i].y - crystals[i].size > canvas.height) {
+                    crystals.splice(i, 1);
+                    continue;
+                }
+                
+                // Check for collision with witch
+                if (checkCollision(witch, crystals[i])) {
+                    if (crystals[i].isRed) {
+                        // Red crystal collision
+                        hearts--;
+                        if (hearts <= 0) {
+                            gameOver = true;
+                        }
+                    } else {
+                        // Blue crystal collision
+                        blueCrystalsCollected++;
+                        score += 500;
+                    }
+                    
+                    // Remove the crystal
+                    crystals.splice(i, 1);
+                }
+            }
+        }
+        
+        // Draw UI elements
+        function drawUI() {
+            // Draw hearts
+            const heartSize = 30;
+            const heartSpacing = 10;
+            const heartY = 20;
+            
+            for (let i = 0; i < hearts; i++) {
+                ctx.drawImage(heartSprite, 20 + i * (heartSize + heartSpacing), heartY, heartSize, heartSize);
+            }
+            
+            // Draw blue crystal counter
+            const crystalSize = 30;
+            const crystalX = canvas.width - 70;
+            const crystalY = 20;
+            
+            ctx.drawImage(blueCrystalIcon, crystalX, crystalY, crystalSize, crystalSize);
+            
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`× ${blueCrystalsCollected}`, crystalX + crystalSize + 5, crystalY + 22);
+            
+            // Draw score
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Score: ${score}`, canvas.width / 2, 30);
+            
+            // Draw game over text
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = 'white';
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 50);
+                
+                ctx.font = '24px Arial';
+                ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2);
+                ctx.fillText('Click or press Enter to restart', canvas.width / 2, canvas.height / 2 + 50);
+            }
+        }
+        
+        // Reset game
+        function resetGame() {
+            gameOver = false;
+            hearts = 3;
+            blueCrystalsCollected = 0;
+            score = 0;
+            
+            // Reset witch position
+            witch.x = canvas.width / 2;
+            witch.y = canvas.height / 2;
+            
+            // Clear arrays
+            fireballs.length = 0;
+            crystals.length = 0;
+            
+            // Reset crystal spawn counter
+            crystalSpawnCounter = 0;
         }
         
         // Draw everything
@@ -222,21 +522,113 @@
             ctx.fillStyle = 'black';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
+            // Draw stalactites
+            drawStalactites();
+            
+            // Draw fireballs (blue magic)
+            ctx.save();
+            for (let i = 0; i < fireballs.length; i++) {
+                const fireball = fireballs[i];
+                
+                // Create gradient for blue fireball
+                const gradient = ctx.createRadialGradient(
+                    fireball.x, fireball.y, 0,
+                    fireball.x, fireball.y, fireball.size
+                );
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                gradient.addColorStop(0.2, 'rgba(100, 200, 255, 0.8)');
+                gradient.addColorStop(0.4, 'rgba(50, 150, 255, 0.8)');
+                gradient.addColorStop(0.8, 'rgba(0, 100, 255, 0.8)');
+                gradient.addColorStop(1, 'rgba(0, 50, 128, 0)');
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(fireball.x, fireball.y, fireball.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Add a glow effect
+                ctx.fillStyle = 'rgba(50, 100, 255, 0.2)';
+                ctx.beginPath();
+                ctx.arc(fireball.x, fireball.y, fireball.size * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+            
+            // Draw crystals
+            for (let i = 0; i < crystals.length; i++) {
+                const crystal = crystals[i];
+                
+                // Draw crystal shape
+                ctx.beginPath();
+                ctx.moveTo(crystal.x, crystal.y - crystal.size / 2);
+                ctx.lineTo(crystal.x + crystal.size / 2, crystal.y);
+                ctx.lineTo(crystal.x, crystal.y + crystal.size / 2);
+                ctx.lineTo(crystal.x - crystal.size / 2, crystal.y);
+                ctx.closePath();
+                
+                // Set crystal color
+                if (crystal.isRed) {
+                    ctx.fillStyle = 'rgb(220, 50, 50)';
+                    ctx.strokeStyle = 'rgb(255, 100, 100)';
+                } else {
+                    ctx.fillStyle = 'rgb(50, 100, 220)';
+                    ctx.strokeStyle = 'rgb(100, 150, 255)';
+                }
+                
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Add shine effect
+                ctx.beginPath();
+                ctx.moveTo(crystal.x - crystal.size / 4, crystal.y - crystal.size / 4);
+                ctx.lineTo(crystal.x + crystal.size / 4, crystal.y + crystal.size / 4);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            
             // Draw witch
             ctx.drawImage(witchSprite, witch.x - witch.size / 2, witch.y - witch.size / 2, witch.size, witch.size);
+            
+            // Draw UI
+            drawUI();
         }
         
         // Game loop
         function gameLoop() {
             updateWitch();
+            updateFireballs();
+            updateCrystals();
             draw();
+            
+            // Recalculate crystal spawn positions on window resize
+            window.addEventListener('resize', () => {
+                resizeCanvas();
+                calculateSpawnPositions();
+                
+                // Reset witch position if out of bounds after resize
+                witch.x = Math.max(witch.size / 2, Math.min(canvas.width - witch.size / 2, witch.x));
+                witch.y = Math.max(stalactiteHeight + witch.size / 2, Math.min(canvas.height - witch.size / 2, witch.y));
+            });
+            
             requestAnimationFrame(gameLoop);
         }
         
-        // Start game
-        witchSprite.onload = function() {
-            gameLoop();
-        };
+        // Start game when assets are loaded
+        const assetsToLoad = [witchSprite, heartSprite, blueCrystalIcon];
+        let assetsLoaded = 0;
+        
+        function assetLoaded() {
+            assetsLoaded++;
+            if (assetsLoaded === assetsToLoad.length) {
+                gameLoop();
+            }
+        }
+        
+        witchSprite.onload = assetLoaded;
+        heartSprite.onload = assetLoaded;
+        blueCrystalIcon.onload = assetLoaded;
     </script>
 </body>
 </html>
