@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Tone Generator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    #frequencyDisplay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: white;
+      font-size: 24px;
+      z-index: 10;
+    }
+    #crystalDisplay {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      color: white;
+      font-size: 24px;
+      z-index: 10;
+      text-align: right;
+    }
+    #muteButton {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      font-size: 18px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: 2px solid white;
+      border-radius: 5px;
+      cursor: pointer;
+      z-index: 10;
+      transition: background 0.3s;
+    }
+    #muteButton:hover {
+      background: rgba(255, 255, 255, 0.4);
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="frequencyDisplay">0 Hz</div>
+  <div id="crystalDisplay">No crystal resonating</div>
+  <button id="muteButton">Mute Sound</button>
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Set up canvas
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+      const frequencyDisplay = document.getElementById('frequencyDisplay');
+      const crystalDisplay = document.getElementById('crystalDisplay');
+      const muteButton = document.getElementById('muteButton');
+      
+      // Create particle system for visual feedback
+      const particles = [];
+      
+      // Resize canvas to fill window
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        drawBackground();
+      }
+      
+      // Define crystal frequencies based on the provided data
+      const CRYSTAL_FREQUENCIES = {
+        "Clear Quartz": 32768,
+        "Amethyst": 319.68,
+        "Rose Quartz": 350,
+        "Black Tourmaline": 125,
+        "Selenite": 688.35,
+        "Citrine": 400,
+        "Moldavite": 150000,
+        "Lapis Lazuli": 417,
+        "Green Aventurine": 250,
+        "Malachite": 325
+      };
+      
+      // Define all frequency steps (both musical notes and crystal frequencies)
+      const frequency_steps = [
+        65.41, // C2 - low C in bass clef
+        73.42, // D2
+        82.41, // E2
+        87.31, // F2
+        98.00, // G2
+        110.00, // A2
+        123.47, // B2
+        125, // Black Tourmaline
+        130.81, // C3
+        146.83, // D3
+        164.81, // E3
+        174.61, // F3
+        196.00, // G3
+        220.00, // A3
+        246.94, // B3
+        250, // Green Aventurine
+        261.63, // C4 (middle C)
+        293.66, // D4
+        319.68, // Amethyst
+        325, // Malachite
+        329.63, // E4
+        349.23, // F4
+        350, // Rose Quartz
+        392.00, // G4
+        400, // Citrine
+        417, // Lapis Lazuli
+        440.00, // A4
+        493.88, // B4
+        523.25, // C5 (one octave above middle C)
+        688.35, // Selenite
+        1000, // Cap for playable frequencies
+        2000,
+        5000, 
+        10000,
+        32768, // Clear Quartz
+        150000 // Moldavite (might be inaudible)
+      ].sort((a, b) => a - b); // Sort frequencies in ascending order
+      
+      // Set up audio
+      let synth = new Tone.Synth().toDestination();
+      let currentNote = 0;
+      let isPlaying = false;
+      let isHolding = false;
+      let transitionTimer = null;
+      let holdTimer = null;
+      let currentFrequency = frequency_steps[0];
+      let isMuted = false;
+      
+      // Function to find the nearest crystal to a frequency
+      function findNearestCrystal(freq) {
+        let closestCrystal = null;
+        let minDifference = Infinity;
+        let isExact = false;
+        
+        for (const [crystal, crystalFreq] of Object.entries(CRYSTAL_FREQUENCIES)) {
+          const difference = Math.abs(freq - crystalFreq);
+          
+          // If we're within 1% of the crystal frequency, consider it a match
+          if (difference < minDifference) {
+            minDifference = difference;
+            closestCrystal = crystal;
+            
+            // If very close, consider it an exact match
+            isExact = difference < (crystalFreq * 0.01);
+          }
+        }
+        
+        // Return the crystal and whether it's an exact match
+        if (!closestCrystal) return "No crystal resonating";
+        
+        if (isExact) {
+          return `✨ ${closestCrystal} is resonating! ✨`;
+        } else {
+          const percentDiff = (minDifference / CRYSTAL_FREQUENCIES[closestCrystal] * 100).toFixed(1);
+          if (percentDiff < 10) {
+            return `Approaching ${closestCrystal} (${percentDiff}% away)`;
+          } else {
+            return "No crystal resonating";
+          }
+        }
+      }
+      
+      // Draw black background
+      function drawBackground() {
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Get crystal status
+        const crystalStatus = crystalDisplay.textContent;
+        
+        // If a crystal is resonating, draw particles and change background
+        if (crystalStatus.includes('resonating')) {
+          // Create a subtle pulsing effect
+          const pulse = Math.sin(Date.now() * 0.005) * 0.5 + 0.5; // Value between 0 and 1
+          const r = Math.floor(20 + pulse * 20);
+          const g = Math.floor(20 + pulse * 20);
+          const b = Math.floor(40 + pulse * 60);
+          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          drawParticles();
+          
+          // Request animation frame for continuous update
+          requestAnimationFrame(drawBackground);
+        }
+      }
+      
+      function drawParticles() {
+        // Add new particles occasionally
+        if (Math.random() < 0.2) {
+          particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 3 + 1,
+            speedX: (Math.random() - 0.5) * 2,
+            speedY: (Math.random() - 0.5) * 2,
+            life: 100 + Math.random() * 100
+          });
+        }
+        
+        // Draw and update particles
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          
+          // Draw particle
+          ctx.fillStyle = `rgba(255, 255, 255, ${p.life / 200})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Update particle
+          p.x += p.speedX;
+          p.y += p.speedY;
+          p.life -= 1;
+          
+          // Remove dead particles
+          if (p.life <= 0) {
+            particles.splice(i, 1);
+            i--;
+          }
+        }
+      }
+      
+      // Set up mute button functionality
+      muteButton.addEventListener('click', function() {
+        isMuted = !isMuted;
+        
+        if (isMuted) {
+          // Mute the audio
+          if (isPlaying) {
+            synth.triggerRelease();
+            isPlaying = false;
+          }
+          muteButton.textContent = "Unmute Sound";
+        } else {
+          // Unmute and play the current frequency
+          synth.triggerAttack(currentFrequency);
+          isPlaying = true;
+          muteButton.textContent = "Mute Sound";
+        }
+      });
+      
+      // Start or restart tone on mouse press
+      canvas.addEventListener('mousedown', function(e) {
+        e.preventDefault(); // Prevent default context menu on right click
+        
+        if (e.button === 0) { // Left click - increase frequency
+          isHolding = true;
+          currentNote = 0;
+          currentFrequency = frequency_steps[currentNote];
+          
+          if (!isMuted) {
+            // Stop any existing note
+            if (isPlaying) {
+              synth.triggerRelease();
+            }
+            
+            // Start the new note
+            synth.triggerAttack(currentFrequency);
+            isPlaying = true;
+          }
+          
+          // Update displays
+          frequencyDisplay.textContent = `${currentFrequency.toFixed(2)} Hz`;
+          crystalDisplay.textContent = findNearestCrystal(currentFrequency);
+          
+          // Clear any existing timers
+          if (holdTimer) clearTimeout(holdTimer);
+          if (transitionTimer) clearTimeout(transitionTimer);
+          
+          // Set up the hold timer for the first note
+          startHoldTimer(true); // true for increasing
+        }
+        else if (e.button === 2) { // Right click - decrease frequency
+          isHolding = true;
+          currentNote = frequency_steps.length - 1; // Start from the highest frequency
+          currentFrequency = frequency_steps[currentNote];
+          
+          if (!isMuted) {
+            // Stop any existing note
+            if (isPlaying) {
+              synth.triggerRelease();
+            }
+            
+            // Start the new note
+            synth.triggerAttack(currentFrequency);
+            isPlaying = true;
+          }
+          
+          // Update displays
+          frequencyDisplay.textContent = `${currentFrequency.toFixed(2)} Hz`;
+          crystalDisplay.textContent = findNearestCrystal(currentFrequency);
+          
+          // Clear any existing timers
+          if (holdTimer) clearTimeout(holdTimer);
+          if (transitionTimer) clearTimeout(transitionTimer);
+          
+          // Set up the hold timer for the first note
+          startHoldTimer(false); // false for decreasing
+        }
+      });
+      
+      // Prevent context menu on right click
+      canvas.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        return false;
+      });
+      
+      // Stop incrementation on mouse release
+      canvas.addEventListener('mouseup', function(e) {
+        if (e.button === 0 || e.button === 2) { // Left or right click
+          isHolding = false;
+          
+          // Clear timers but keep the current tone playing
+          if (holdTimer) clearTimeout(holdTimer);
+          if (transitionTimer) clearTimeout(transitionTimer);
+        }
+      });
+      
+      // Function to start the hold timer
+      function startHoldTimer(isIncreasing) {
+        if (isIncreasing) {
+          // Only proceed if the user is still holding and we're not at max note
+          if (isHolding && currentNote < frequency_steps.length - 1) {
+            holdTimer = setTimeout(function() {
+              startTransition(isIncreasing);
+            }, 300); // 0.3 seconds of holding the note
+          }
+        } else {
+          // Only proceed if the user is still holding and we're not at min note
+          if (isHolding && currentNote > 0) {
+            holdTimer = setTimeout(function() {
+              startTransition(isIncreasing);
+            }, 300); // 0.3 seconds of holding the note
+          }
+        }
+      }
+      
+      // Function to handle the transition between notes
+      function startTransition(isIncreasing) {
+        if (isIncreasing) {
+          // Only proceed if the user is still holding and we're not at max note
+          if (isHolding && currentNote < frequency_steps.length - 1) {
+            const startFreq = frequency_steps[currentNote];
+            const endFreq = frequency_steps[currentNote + 1];
+            const startTime = Date.now();
+            const duration = 300; // 0.3 seconds transition
+            
+            // Function to update frequency during transition
+            function updateFrequency() {
+              const elapsedTime = Date.now() - startTime;
+              const progress = Math.min(elapsedTime / duration, 1);
+              
+              // Calculate current frequency using linear interpolation
+              currentFrequency = startFreq + progress * (endFreq - startFreq);
+              
+              // Update synth frequency if not muted
+              if (!isMuted && isPlaying) {
+                synth.frequency.value = currentFrequency;
+              }
+              
+              // Update displays
+              frequencyDisplay.textContent = `${currentFrequency.toFixed(2)} Hz`;
+              crystalDisplay.textContent = findNearestCrystal(currentFrequency);
+              
+              // Continue updating if transition is not complete
+              if (progress < 1 && isHolding) {
+                requestAnimationFrame(updateFrequency);
+              } else if (isHolding) {
+                // Transition complete, move to next note
+                currentNote++;
+                startHoldTimer(isIncreasing);
+              }
+            }
+            
+            // Start the transition
+            updateFrequency();
+          }
+        } else {
+          // Only proceed if the user is still holding and we're not at min note
+          if (isHolding && currentNote > 0) {
+            const startFreq = frequency_steps[currentNote];
+            const endFreq = frequency_steps[currentNote - 1];
+            const startTime = Date.now();
+            const duration = 300; // 0.3 seconds transition
+            
+            // Function to update frequency during transition
+            function updateFrequency() {
+              const elapsedTime = Date.now() - startTime;
+              const progress = Math.min(elapsedTime / duration, 1);
+              
+              // Calculate current frequency using linear interpolation
+              currentFrequency = startFreq - progress * (startFreq - endFreq);
+              
+              // Update synth frequency if not muted
+              if (!isMuted && isPlaying) {
+                synth.frequency.value = currentFrequency;
+              }
+              
+              // Update displays
+              frequencyDisplay.textContent = `${currentFrequency.toFixed(2)} Hz`;
+              crystalDisplay.textContent = findNearestCrystal(currentFrequency);
+              
+              // Continue updating if transition is not complete
+              if (progress < 1 && isHolding) {
+                requestAnimationFrame(updateFrequency);
+              } else if (isHolding) {
+                // Transition complete, move to previous note
+                currentNote--;
+                startHoldTimer(isIncreasing);
+              }
+            }
+            
+            // Start the transition
+            updateFrequency();
+          }
+        }
+      }
+      
+      // Initial setup
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+    });
+  </script>
+</body>
+</html>
