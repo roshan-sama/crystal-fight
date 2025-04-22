@@ -47,6 +47,21 @@
     #muteButton:hover {
       background: rgba(255, 255, 255, 0.4);
     }
+    #gameCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+      display: block;
+    }
+    #analyserCanvas {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 300px;
+      height: 300px;
+      z-index: 5;
+    }
     canvas {
       display: block;
     }
@@ -57,7 +72,9 @@
   <div id="crystalDisplay">No crystal resonating</div>
   <button id="muteButton">Mute Sound</button>
   <canvas id="gameCanvas"></canvas>
-
+  <canvas id="analyserCanvas"></canvas>
+  
+  <script src="script.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       // Set up canvas
@@ -140,6 +157,11 @@
       let holdTimer = null;
       let currentFrequency = frequency_steps[0];
       let isMuted = false;
+      
+      // Set up the Fourier Transform analyser
+      if (typeof setupAnalyser === 'function') {
+        setupAnalyser(synth);
+      }
       
       // Function to find the nearest crystal to a frequency
       function findNearestCrystal(freq) {
