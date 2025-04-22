@@ -5,6 +5,8 @@ let analyserCtx;
 let frequencyData;
 let isAnalyserSetup = false;
 
+console.log("Fourier Visualization setup")
+
 // Set up the Fourier Transform visualization
 function setupAnalyser(synth) {
   // Create an analyser node
